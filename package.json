@@ -1,11 +1,10 @@
 {
   "name": "variable-blur",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Apple-style variable blur for Node.js",
   "license": "Apache-2.0",
   "main": "index.js",
   "types": "index.d.ts",
-  "browser": "browser.js",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Zhousiru/variable-blur.git"
@@ -27,7 +26,6 @@
   "files": [
     "index.d.ts",
     "index.js",
-    "browser.js",
     "README.md"
   ],
   "napi": {
