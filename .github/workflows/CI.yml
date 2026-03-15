@@ -155,6 +155,9 @@ jobs:
         run: pnpm napi create-npm-dirs
       - name: Move artifacts
         run: pnpm artifacts
+      - name: List packages
+        run: ls -R ./npm
+        shell: bash
       - name: Publish
         run: |
           npm config set provenance true

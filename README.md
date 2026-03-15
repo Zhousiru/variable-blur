@@ -101,4 +101,4 @@ Built-in [egui](https://github.com/emilk/egui) tool for real-time parameter tuni
 
 ## License
 
-MIT
+Apache-2.0

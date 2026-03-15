@@ -1,13 +1,34 @@
 {
   "name": "variable-blur",
   "version": "0.1.0",
+  "description": "Apple-style variable blur for Node.js",
+  "license": "Apache-2.0",
   "main": "index.js",
   "types": "index.d.ts",
   "browser": "browser.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zhousiru/variable-blur.git"
+  },
+  "homepage": "https://github.com/Zhousiru/variable-blur#readme",
+  "bugs": {
+    "url": "https://github.com/Zhousiru/variable-blur/issues"
+  },
+  "keywords": [
+    "blur",
+    "variable-blur",
+    "gaussian-blur",
+    "image-processing",
+    "apple",
+    "napi-rs",
+    "native",
+    "sharp"
+  ],
   "files": [
     "index.d.ts",
     "index.js",
-    "browser.js"
+    "browser.js",
+    "README.md"
   ],
   "napi": {
     "binaryName": "variable-blur",
@@ -24,6 +45,10 @@
   },
   "engines": {
     "node": ">= 10"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
   },
   "scripts": {
     "artifacts": "napi artifacts",
