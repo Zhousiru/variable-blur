@@ -1,0 +1,17 @@
+[package]
+edition = "2021"
+name = "variable_blur_debug_ui"
+version = "0.1.0"
+
+[dependencies]
+eframe = { version = "0.33.3", default-features = true }
+image = { version = "0.25.10", default-features = false, features = [
+    "bmp",
+    "jpeg",
+    "png",
+    "tga",
+    "tiff",
+    "webp",
+] }
+rfd = "0.17.2"
+variable_blur = { path = "../.." }

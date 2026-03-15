@@ -1,8 +1,6 @@
 #![deny(clippy::all)]
 
-use napi_derive::napi;
+pub mod core;
+mod napirs;
 
-#[napi]
-pub fn plus_100(input: u32) -> u32 {
-  input + 100
-}
+pub use napirs::variable_blur;
