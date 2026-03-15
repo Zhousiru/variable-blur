@@ -1,12 +1,14 @@
 <div align="center">
 
-# variable-blur
+# Variable Blur
 
-**Apple 风格可变模糊 — Node.js 原生模块**
+**制作 Apple 风格可变模糊的 Node.js 原生模块**
+
+[![NPM Version](https://img.shields.io/npm/v/variable-blur?style=flat-square)](https://www.npmjs.com/package/variable-blur)
 
 <br>
 
-<img src="docs/example-blurred.png" width="720">
+<img src="docs/example-blurred.png" width="500">
 
 <br>
 <br>
@@ -63,16 +65,16 @@ cargo run -p debug-ui --release
 
 | 字段           | 类型     | 可选 | 默认值       | 说明                                                         |
 | :------------- | :------- | :--: | :----------- | :----------------------------------------------------------- |
-| `x`            | `number` | 是   | `1`          | 模糊方向 X 分量                                              |
-| `y`            | `number` | 是   | `0`          | 模糊方向 Y 分量                                              |
-| `start`        | `number` | 是   | 自动         | 模糊起始投影坐标                                             |
-| `end`          | `number` | 是   | 自动         | 模糊达到最大值的投影坐标                                     |
-| `preset`       | `string` | 是   | `"balanced"` | `"fast"` / `"balanced"` / `"high"`                           |
-| `maxSigma`     | `number` | 是   | 取决于预设   | 最大 sigma（`fast`=24, `balanced`=32, `high`=40）            |
-| `curve`        | `string` | 是   | `"power"`    | `"linear"`、`"power(γ)"`、`"cubic-bezier(x1,y1,x2,y2)"`     |
-| `schedule`     | `string` | 是   | `"power"`    | `"linear"`、`"power(γ)"`                                     |
-| `outputFormat` | `string` | 是   | 与输入相同   | `"png"` / `"jpeg"` / `"webp"` / `"bmp"` / `"tiff"` / `"tga"` |
-| `advanced`     | `object` | 是   | &mdash;      | 见 [Advanced Options](#advanced-options)                     |
+| `x`            | `number` |  是  | `1`          | 模糊方向 X 分量                                              |
+| `y`            | `number` |  是  | `0`          | 模糊方向 Y 分量                                              |
+| `start`        | `number` |  是  | 自动         | 模糊起始投影坐标                                             |
+| `end`          | `number` |  是  | 自动         | 模糊达到最大值的投影坐标                                     |
+| `preset`       | `string` |  是  | `"balanced"` | `"fast"` / `"balanced"` / `"high"`                           |
+| `maxSigma`     | `number` |  是  | 取决于预设   | 最大 sigma（`fast`=24, `balanced`=32, `high`=40）            |
+| `curve`        | `string` |  是  | `"power"`    | `"linear"`、`"power(γ)"`、`"cubic-bezier(x1,y1,x2,y2)"`      |
+| `schedule`     | `string` |  是  | `"power"`    | `"linear"`、`"power(γ)"`                                     |
+| `outputFormat` | `string` |  是  | 与输入相同   | `"png"` / `"jpeg"` / `"webp"` / `"bmp"` / `"tiff"` / `"tga"` |
+| `advanced`     | `object` |  是  | &mdash;      | 见 [Advanced Options](#advanced-options)                     |
 
 ### Advanced Options
 
@@ -89,7 +91,7 @@ cargo run -p debug-ui --release
 | `advanced.targetLocalSigma`     | `number` | 取决于预设 | 每级目标 local sigma   |
 | `advanced.minLocalSigma`        | `number` | 取决于预设 | 每级最小 local sigma   |
 | `advanced.maxLocalSigma`        | `number` | 取决于预设 | 每级最大 local sigma   |
-| `advanced.downsampleStageSigma` | `number` | `0.5`      | 2x 下采样前等效 sigma  |
+| `advanced.downsampleStageSigma` | `number` | `0.5`      | 2x 下采样后等效 sigma  |
 
 | 预设       | steps | maxLevels | targetLocalSigma | minLocalSigma | maxLocalSigma |
 | :--------- | :---: | :-------: | :--------------: | :-----------: | :-----------: |

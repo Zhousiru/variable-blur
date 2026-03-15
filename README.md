@@ -1,12 +1,14 @@
 <div align="center">
 
-# variable-blur
+# Variable Blur
 
 **Apple-style variable blur for Node.js**
 
+[![NPM Version](https://img.shields.io/npm/v/variable-blur?style=flat-square)](https://www.npmjs.com/package/variable-blur)
+
 <br>
 
-<img src="docs/example-blurred.png" width="720">
+<img src="docs/example-blurred.png" width="500">
 
 <br>
 <br>
@@ -81,15 +83,15 @@ Built-in [egui](https://github.com/emilk/egui) tool for real-time parameter tuni
 
 <br>
 
-| Field                           | Type     | Default  | Description                           |
-| :------------------------------ | :------- | :------- | :------------------------------------ |
-| `advanced.mode`                 | `string` | `"auto"` | `"auto"` or `"manual"`                |
-| `advanced.steps`                | `number` | preset   | Discrete blur levels                  |
-| `advanced.maxLevels`            | `number` | preset   | Max downsampling depth                |
-| `advanced.targetLocalSigma`     | `number` | preset   | Per-level target local sigma          |
-| `advanced.minLocalSigma`        | `number` | preset   | Per-level min local sigma             |
-| `advanced.maxLocalSigma`        | `number` | preset   | Per-level max local sigma             |
-| `advanced.downsampleStageSigma` | `number` | `0.5`    | Equivalent sigma before 2x downsample |
+| Field                           | Type     | Default  | Description                          |
+| :------------------------------ | :------- | :------- | :----------------------------------- |
+| `advanced.mode`                 | `string` | `"auto"` | `"auto"` or `"manual"`               |
+| `advanced.steps`                | `number` | preset   | Discrete blur levels                 |
+| `advanced.maxLevels`            | `number` | preset   | Max downsampling depth               |
+| `advanced.targetLocalSigma`     | `number` | preset   | Per-level target local sigma         |
+| `advanced.minLocalSigma`        | `number` | preset   | Per-level min local sigma            |
+| `advanced.maxLocalSigma`        | `number` | preset   | Per-level max local sigma            |
+| `advanced.downsampleStageSigma` | `number` | `0.5`    | Equivalent sigma after 2x downsample |
 
 | Preset     | steps | maxLevels | targetLocalSigma | minLocalSigma | maxLocalSigma |
 | :--------- | :---: | :-------: | :--------------: | :-----------: | :-----------: |
