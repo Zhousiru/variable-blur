@@ -1,0 +1,18 @@
+[package]
+edition = "2021"
+name = "variable_blur_bench"
+version = "0.1.0"
+
+[dependencies]
+clap = { version = "4.6.0", features = ["derive"] }
+image = { version = "0.25.10", default-features = false, features = [
+    "bmp",
+    "jpeg",
+    "png",
+    "tga",
+    "tiff",
+    "webp",
+] }
+rayon = "1.11.0"
+sysinfo = "0.38.4"
+variable_blur = { path = "../.." }

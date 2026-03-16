@@ -1,4 +1,4 @@
-use image::{GenericImageView, ImageFormat};
+use image::{DynamicImage, GenericImageView, ImageFormat};
 use napi::{
   bindgen_prelude::{Buffer, Error, Result},
   Status,
@@ -7,10 +7,15 @@ use napi_derive::napi;
 
 use crate::core::{
   apply_directional_variable_blur, default_directional_options, encode_dynamic_image, BlurCurve,
-  QualityPreset, SigmaSchedule, VariableBlurConfig,
+  DirectionalBlurOptions, QualityPreset, SigmaSchedule, VariableBlurConfig,
 };
 
-#[derive(Default)]
+const DEFAULT_CURVE_SPEC: &str = "power";
+const DEFAULT_CURVE_GAMMA: f32 = 1.6;
+const DEFAULT_SCHEDULE_SPEC: &str = "power";
+const DEFAULT_SCHEDULE_GAMMA: f32 = 2.8;
+
+#[derive(Clone, Copy, Default)]
 enum AdvancedMode {
   #[default]
   Auto,
@@ -21,7 +26,7 @@ enum AdvancedMode {
 #[derive(Default)]
 pub struct VariableBlurInput {
   pub buffer: Buffer,
-  pub options: Option<VariableBlurOptions>,
+  pub options: VariableBlurOptions,
 }
 
 #[napi(object)]
@@ -39,12 +44,12 @@ pub struct VariableBlurAdvancedOptions {
 #[napi(object)]
 #[derive(Default)]
 pub struct VariableBlurOptions {
-  pub x: Option<f64>,
-  pub y: Option<f64>,
+  pub x: f64,
+  pub y: f64,
   pub start: Option<f64>,
   pub end: Option<f64>,
   pub preset: Option<String>,
-  pub max_sigma: Option<f64>,
+  pub max_sigma: f64,
   pub curve: Option<String>,
   pub schedule: Option<String>,
   pub advanced: Option<VariableBlurAdvancedOptions>,
@@ -53,24 +58,10 @@ pub struct VariableBlurOptions {
 
 #[napi(js_name = "variableBlur")]
 pub fn variable_blur(input: VariableBlurInput) -> Result<Buffer> {
-  let options = input.options.unwrap_or_default();
-  let input_bytes = input.buffer.to_vec();
-  let input_format = image::guess_format(&input_bytes).unwrap_or(ImageFormat::Png);
-  let decoded = image::load_from_memory(&input_bytes)
-    .map_err(|err| invalid_arg(format!("decode image failed: {err}")))?;
+  let options = input.options;
+  let (decoded, input_format) = decode_input_image(&input.buffer)?;
   let cfg = build_config(&options, decoded.dimensions())?;
-
-  let base_direction = [
-    options.x.unwrap_or(1.0) as f32,
-    options.y.unwrap_or(0.0) as f32,
-  ];
-  let mut blur_options = default_directional_options(decoded.dimensions(), base_direction);
-  if let Some(start) = options.start {
-    blur_options.start = start as f32;
-  }
-  if let Some(end) = options.end {
-    blur_options.end = end as f32;
-  }
+  let blur_options = build_directional_options(&options, decoded.dimensions())?;
 
   let output = apply_directional_variable_blur(&decoded, cfg, blur_options);
   let encoded = encode_dynamic_image(
@@ -83,16 +74,39 @@ pub fn variable_blur(input: VariableBlurInput) -> Result<Buffer> {
   Ok(encoded.into())
 }
 
+fn decode_input_image(buffer: &Buffer) -> Result<(DynamicImage, ImageFormat)> {
+  let input_bytes = buffer.as_ref();
+  let input_format = image::guess_format(input_bytes).unwrap_or(ImageFormat::Png);
+  let decoded = image::load_from_memory(input_bytes)
+    .map_err(|err| invalid_arg(format!("decode image failed: {err}")))?;
+
+  Ok((decoded, input_format))
+}
+
+fn build_directional_options(
+  options: &VariableBlurOptions,
+  dimensions: (u32, u32),
+) -> Result<DirectionalBlurOptions> {
+  let x = finite("x", options.x)? as f32;
+  let y = finite("y", options.y)? as f32;
+
+  let mut blur_options = default_directional_options(dimensions, [x, y]);
+  if let Some(start) = options.start {
+    blur_options.start = finite("start", start)? as f32;
+  }
+  if let Some(end) = options.end {
+    blur_options.end = finite("end", end)? as f32;
+  }
+
+  Ok(blur_options)
+}
+
 fn build_config(
   options: &VariableBlurOptions,
   dimensions: (u32, u32),
 ) -> Result<VariableBlurConfig> {
   let preset = parse_preset(options.preset.as_deref())?.unwrap_or(QualityPreset::Balanced);
-  let max_sigma = options
-    .max_sigma
-    .map(|value| positive("maxSigma", value).map(|result| result as f32))
-    .transpose()?
-    .unwrap_or_else(|| preset.default_max_sigma());
+  let max_sigma = positive("maxSigma", options.max_sigma)? as f32;
 
   let advanced = options.advanced.as_ref();
   let mode = parse_advanced_mode(advanced.and_then(|value| value.mode.as_deref()))?;
@@ -105,8 +119,8 @@ fn build_config(
     }
   };
 
-  cfg.curve = parse_curve(options)?;
-  cfg.schedule = parse_schedule(options)?;
+  cfg.curve = parse_curve(options.curve.as_deref())?;
+  cfg.schedule = parse_schedule(options.schedule.as_deref())?;
 
   if let Some(advanced) = advanced {
     apply_advanced_overrides(&mut cfg, advanced)?;
@@ -121,10 +135,10 @@ fn apply_advanced_overrides(
   advanced: &VariableBlurAdvancedOptions,
 ) -> Result<()> {
   if let Some(steps) = advanced.steps {
-    cfg.steps = steps.max(2) as usize;
+    cfg.steps = minimum("advanced.steps", steps, 2)? as usize;
   }
   if let Some(max_levels) = advanced.max_levels {
-    cfg.pyramid.max_levels = max_levels.max(1) as usize;
+    cfg.pyramid.max_levels = minimum("advanced.maxLevels", max_levels, 1)? as usize;
   }
   if let Some(target_local_sigma) = advanced.target_local_sigma {
     cfg.pyramid.target_local_sigma =
@@ -144,47 +158,44 @@ fn apply_advanced_overrides(
   Ok(())
 }
 
-fn parse_curve(options: &VariableBlurOptions) -> Result<BlurCurve> {
-  let value = options.curve.as_deref().unwrap_or("power").trim();
+fn parse_curve(value: Option<&str>) -> Result<BlurCurve> {
+  let value = value.unwrap_or(DEFAULT_CURVE_SPEC).trim();
 
   if let Some((name, args)) = parse_function_call(value) {
     if name.eq_ignore_ascii_case("power") {
-      return Ok(BlurCurve::Power(
-        parse_exact_f32_args("curve", value, args, 1)?[0].max(0.01),
-      ));
+      let [gamma] = parse_fixed_f32_args::<1>("curve", value, args)?;
+      return Ok(BlurCurve::Power(positive_f32("curve", gamma, value)?));
     }
     if name.eq_ignore_ascii_case("cubicbezier") || name.eq_ignore_ascii_case("cubic-bezier") {
-      let values = parse_exact_f32_args("curve", value, args, 4)?;
-      return Ok(BlurCurve::CubicBezier {
-        x1: values[0],
-        y1: values[1],
-        x2: values[2],
-        y2: values[3],
-      });
+      let [x1, y1, x2, y2] = parse_fixed_f32_args::<4>("curve", value, args)?;
+      return Ok(BlurCurve::CubicBezier { x1, y1, x2, y2 });
     }
   }
 
   match value {
     value if value.eq_ignore_ascii_case("linear") => Ok(BlurCurve::Linear),
-    value if value.eq_ignore_ascii_case("power") => Ok(BlurCurve::Power(1.6)),
+    value if value.eq_ignore_ascii_case("power") => Ok(BlurCurve::Power(DEFAULT_CURVE_GAMMA)),
     value => Err(invalid_arg(format!("unsupported curve: {value}"))),
   }
 }
 
-fn parse_schedule(options: &VariableBlurOptions) -> Result<SigmaSchedule> {
-  let value = options.schedule.as_deref().unwrap_or("power").trim();
+fn parse_schedule(value: Option<&str>) -> Result<SigmaSchedule> {
+  let value = value.unwrap_or(DEFAULT_SCHEDULE_SPEC).trim();
 
   if let Some((name, args)) = parse_function_call(value) {
     if name.eq_ignore_ascii_case("power") {
+      let [gamma] = parse_fixed_f32_args::<1>("schedule", value, args)?;
       return Ok(SigmaSchedule::Power {
-        gamma: parse_exact_f32_args("schedule", value, args, 1)?[0].max(0.01),
+        gamma: positive_f32("schedule", gamma, value)?,
       });
     }
   }
 
   match value {
     value if value.eq_ignore_ascii_case("linear") => Ok(SigmaSchedule::Linear),
-    value if value.eq_ignore_ascii_case("power") => Ok(SigmaSchedule::Power { gamma: 2.8 }),
+    value if value.eq_ignore_ascii_case("power") => Ok(SigmaSchedule::Power {
+      gamma: DEFAULT_SCHEDULE_GAMMA,
+    }),
     value => Err(invalid_arg(format!("unsupported schedule: {value}"))),
   }
 }
@@ -223,27 +234,29 @@ fn parse_function_call(value: &str) -> Option<(&str, &str)> {
   Some((name, args))
 }
 
-fn parse_exact_f32_args(
+fn parse_fixed_f32_args<const N: usize>(
   kind: &str,
   full_value: &str,
   args: &str,
-  expected: usize,
-) -> Result<Vec<f32>> {
+) -> Result<[f32; N]> {
   let values = args
     .split(',')
     .map(|part| {
-      part
+      let value = part
         .trim()
         .parse::<f32>()
-        .map_err(|_| invalid_arg(format!("invalid {kind} spec: {full_value}")))
+        .map_err(|_| invalid_arg(format!("invalid {kind} spec: {full_value}")))?;
+      if value.is_finite() {
+        Ok(value)
+      } else {
+        Err(invalid_arg(format!("invalid {kind} spec: {full_value}")))
+      }
     })
     .collect::<Result<Vec<_>>>()?;
 
-  if values.len() != expected {
-    return Err(invalid_arg(format!("invalid {kind} spec: {full_value}")));
-  }
-
-  Ok(values)
+  values
+    .try_into()
+    .map_err(|_| invalid_arg(format!("invalid {kind} spec: {full_value}")))
 }
 
 fn parse_output_format(value: Option<&str>) -> Result<Option<ImageFormat>> {
@@ -261,6 +274,14 @@ fn parse_output_format(value: Option<&str>) -> Result<Option<ImageFormat>> {
   }
 }
 
+fn positive_f32(kind: &str, value: f32, full_value: &str) -> Result<f32> {
+  if value.is_finite() && value > 0.0 {
+    Ok(value)
+  } else {
+    Err(invalid_arg(format!("invalid {kind} spec: {full_value}")))
+  }
+}
+
 fn positive(name: &str, value: f64) -> Result<f64> {
   if value.is_finite() && value > 0.0 {
     Ok(value)
@@ -269,6 +290,22 @@ fn positive(name: &str, value: f64) -> Result<f64> {
   }
 }
 
-fn invalid_arg(reason: String) -> Error {
-  Error::new(Status::InvalidArg, reason)
+fn minimum(name: &str, value: u32, min: u32) -> Result<u32> {
+  if value >= min {
+    Ok(value)
+  } else {
+    Err(invalid_arg(format!("{name} must be >= {min}")))
+  }
+}
+
+fn finite(name: &str, value: f64) -> Result<f64> {
+  if value.is_finite() {
+    Ok(value)
+  } else {
+    Err(invalid_arg(format!("{name} must be a finite number")))
+  }
+}
+
+fn invalid_arg(reason: impl Into<String>) -> Error {
+  Error::new(Status::InvalidArg, reason.into())
 }

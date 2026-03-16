@@ -2,18 +2,11 @@
 
 # Variable Blur
 
-**Apple-style variable blur for Node.js**
+**iOS-style variable blur for Node.js**
 
 [![NPM Version](https://img.shields.io/npm/v/variable-blur?style=flat-square)](https://www.npmjs.com/package/variable-blur)
 
-<br>
-
 <img src="docs/example-blurred.png" width="500">
-
-<br>
-<br>
-
-[中文文档](./README.zh-CN.md)
 
 </div>
 
@@ -28,26 +21,30 @@ Prebuilt binaries for macOS / Linux / Windows (x64 & arm64).
 ## Quick Start
 
 ```js
-import sharp from 'sharp'
+import { readFile, writeFile } from 'node:fs/promises'
 import { variableBlur } from 'variable-blur'
 
-const input = await sharp('photo.jpg').png().toBuffer()
+const input = await readFile('photo.jpg')
 
 const output = variableBlur({
   buffer: input,
   options: {
-    preset: 'balanced',
+    x: 1,
+    y: 0,
     maxSigma: 32,
+    preset: 'balanced',
   },
 })
 
-await sharp(output).toFile('photo-blurred.png')
+await writeFile('photo-blurred.jpg', output)
 ```
+
+`variableBlur` accepts encoded image bytes as input and returns encoded image bytes as output.
 
 ## Debug UI
 
 ```bash
-cargo run -p debug-ui --release
+cargo run -p variable_blur_debug_ui -r
 ```
 
 Built-in [egui](https://github.com/emilk/egui) tool for real-time parameter tuning.
@@ -56,25 +53,25 @@ Built-in [egui](https://github.com/emilk/egui) tool for real-time parameter tuni
 
 ### `variableBlur(input): Buffer`
 
-| Parameter       | Type      | Description                           |
-| :-------------- | :-------- | :------------------------------------ |
-| `input.buffer`  | `Buffer`  | Encoded image (PNG, JPEG, WebP, etc.) |
-| `input.options` | `object?` | See below                             |
+| Parameter       | Type     | Description                           |
+| :-------------- | :------- | :------------------------------------ |
+| `input.buffer`  | `Buffer` | Encoded image (PNG, JPEG, WebP, etc.) |
+| `input.options` | `object` | Required options object; see below    |
 
 ### Options
 
-| Field          | Type     | Optional | Default       | Description                                                  |
-| :------------- | :------- | :------: | :------------ | :----------------------------------------------------------- |
-| `x`            | `number` |   yes    | `1`           | X component of blur direction                                |
-| `y`            | `number` |   yes    | `0`           | Y component of blur direction                                |
-| `start`        | `number` |   yes    | auto          | Projection coordinate where blur begins                      |
-| `end`          | `number` |   yes    | auto          | Projection coordinate where blur reaches max                 |
-| `preset`       | `string` |   yes    | `"balanced"`  | `"fast"` / `"balanced"` / `"high"`                           |
-| `maxSigma`     | `number` |   yes    | preset        | Max Gaussian sigma (`fast`=24, `balanced`=32, `high`=40)     |
-| `curve`        | `string` |   yes    | `"power"`     | `"linear"`, `"power(γ)"`, `"cubic-bezier(x1,y1,x2,y2)"`      |
-| `schedule`     | `string` |   yes    | `"power"`     | `"linear"`, `"power(γ)"`                                     |
-| `outputFormat` | `string` |   yes    | same as input | `"png"` / `"jpeg"` / `"webp"` / `"bmp"` / `"tiff"` / `"tga"` |
-| `advanced`     | `object` |   yes    | &mdash;       | See [Advanced Options](#advanced-options)                    |
+| Field          | Type     | Optional | Default        | Description                                                                           |
+| :------------- | :------- | :------: | :------------- | :------------------------------------------------------------------------------------ |
+| `x`            | `number` |    no    | -              | Finite X component of the blur direction vector                                       |
+| `y`            | `number` |    no    | -              | Finite Y component of the blur direction vector                                       |
+| `start`        | `number` |   yes    | auto           | Finite projection coordinate where blur begins                                        |
+| `end`          | `number` |   yes    | auto           | Finite projection coordinate where blur reaches max                                   |
+| `preset`       | `string` |   yes    | `"balanced"`   | `"fast"` / `"balanced"` / `"high"` quality preset for internal blur pyramid tuning    |
+| `maxSigma`     | `number` |    no    | -              | Maximum Gaussian sigma; controls the blur strength cap                                |
+| `curve`        | `string` |   yes    | `"power(1.6)"` | `"linear"`, `"power(γ)"`, `"cubic-bezier(x1,y1,x2,y2)"`; `γ` must be finite and `> 0` |
+| `schedule`     | `string` |   yes    | `"power(2.8)"` | `"linear"`, `"power(γ)"`; `γ` must be finite and `> 0`                                |
+| `outputFormat` | `string` |   yes    | same as input  | `"png"` / `"jpeg"` / `"jpg"` / `"webp"` / `"bmp"` / `"tiff"` / `"tga"`                |
+| `advanced`     | `object` |   yes    | &mdash;        | See [Advanced Options](#advanced-options)                                             |
 
 ### Advanced Options
 
@@ -83,23 +80,39 @@ Built-in [egui](https://github.com/emilk/egui) tool for real-time parameter tuni
 
 <br>
 
-| Field                           | Type     | Default  | Description                          |
-| :------------------------------ | :------- | :------- | :----------------------------------- |
-| `advanced.mode`                 | `string` | `"auto"` | `"auto"` or `"manual"`               |
-| `advanced.steps`                | `number` | preset   | Discrete blur levels                 |
-| `advanced.maxLevels`            | `number` | preset   | Max downsampling depth               |
-| `advanced.targetLocalSigma`     | `number` | preset   | Per-level target local sigma         |
-| `advanced.minLocalSigma`        | `number` | preset   | Per-level min local sigma            |
-| `advanced.maxLocalSigma`        | `number` | preset   | Per-level max local sigma            |
-| `advanced.downsampleStageSigma` | `number` | `0.5`    | Equivalent sigma after 2x downsample |
+`advanced.mode: "auto"` derives defaults from `preset`, image size, and `maxSigma`.
+If you also provide other `advanced.*` fields, they still override those defaults.
 
-| Preset     | steps | maxLevels | targetLocalSigma | minLocalSigma | maxLocalSigma |
-| :--------- | :---: | :-------: | :--------------: | :-----------: | :-----------: |
-| `fast`     |   7   |     6     |       1.6        |      0.3      |      3.0      |
-| `balanced` |  10   |     4     |       2.0        |      0.5      |      4.0      |
-| `high`     |  14   |     2     |       2.4        |      0.8      |      5.0      |
+| Field                           | Type     | Default  | Description                                         |
+| :------------------------------ | :------- | :------- | :-------------------------------------------------- |
+| `advanced.mode`                 | `string` | `"auto"` | `"auto"` or `"manual"`                              |
+| `advanced.steps`                | `number` | derived  | Discrete blur levels, must be `>= 2`                |
+| `advanced.maxLevels`            | `number` | derived  | Max downsampling depth, must be `>= 1`              |
+| `advanced.targetLocalSigma`     | `number` | derived  | Per-level target local sigma, must be `> 0`         |
+| `advanced.minLocalSigma`        | `number` | derived  | Per-level min local sigma, must be `> 0`            |
+| `advanced.maxLocalSigma`        | `number` | derived  | Per-level max local sigma, must be `> 0`            |
+| `advanced.downsampleStageSigma` | `number` | `0.5`    | Equivalent sigma after 2x downsample, must be `> 0` |
 
 </details>
+
+## Benchmark
+
+```bash
+cargo run -p variable_blur_bench -r -- --image docs/benchmark.jpg --warmup 5 --runs 20
+```
+
+```
+Machine       : Windows 11 Pro | AMD Ryzen 9 9950X3D 16-Core Processor | 16C / 32T
+Image         : 2400x1300 | Jpeg | Rgb8 | 593.59 KiB
+Benchmark     : 5 warmup | 20 measured
+Direction     : [1.0000, 0.0000] | start 0.0000 | end 2400.0000
+Sigma override: preset default
+
+Preset              avg     median        p95        min        max     MPix/s
+Fast           82.16 ms   82.13 ms   83.57 ms   80.15 ms   83.92 ms      37.98
+Balanced      101.69 ms  101.68 ms  103.58 ms   97.86 ms  103.94 ms      30.68
+High          150.06 ms  150.02 ms  152.08 ms  147.99 ms  153.17 ms      20.79
+```
 
 ## License
 

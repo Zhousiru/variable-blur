@@ -1,6 +1,6 @@
 {
   "name": "variable-blur",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Apple-style variable blur for Node.js",
   "license": "Apache-2.0",
   "main": "index.js",
@@ -19,6 +19,7 @@
     "gaussian-blur",
     "image-processing",
     "apple",
+    "ios",
     "napi-rs",
     "native",
     "sharp"

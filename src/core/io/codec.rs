@@ -1,43 +1,56 @@
 use std::io::Cursor;
 
-use image::{DynamicImage, ImageFormat, Rgb, RgbImage, Rgba, RgbaImage};
+use fast_srgb8::{f32x4_to_srgb8, srgb8_to_f32};
+use image::{DynamicImage, ImageFormat, Rgb, RgbImage, RgbaImage};
+use rayon::prelude::*;
 
 use crate::core::{engine::image::LinearRgbaImage, EPSILON};
 
 pub(crate) fn from_dynamic_image(image: &DynamicImage) -> LinearRgbaImage {
   let rgba = image.to_rgba8();
   let (width, height) = rgba.dimensions();
-  let mut out = LinearRgbaImage::new(width as usize, height as usize);
+  let data = rgba
+    .as_raw()
+    .par_chunks_exact(4)
+    .map(|pixel| {
+      let alpha = pixel[3] as f32 / 255.0;
+      let rgb = [
+        srgb_to_linear(pixel[0]),
+        srgb_to_linear(pixel[1]),
+        srgb_to_linear(pixel[2]),
+      ];
+      [rgb[0] * alpha, rgb[1] * alpha, rgb[2] * alpha, alpha]
+    })
+    .collect();
 
-  for (index, pixel) in rgba.pixels().enumerate() {
-    let alpha = pixel[3] as f32 / 255.0;
-    let rgb = [
-      srgb_to_linear(pixel[0]),
-      srgb_to_linear(pixel[1]),
-      srgb_to_linear(pixel[2]),
-    ];
-    out.data[index] = [rgb[0] * alpha, rgb[1] * alpha, rgb[2] * alpha, alpha];
+  LinearRgbaImage {
+    width: width as usize,
+    height: height as usize,
+    data,
   }
-
-  out
 }
 
 pub(crate) fn to_dynamic_image(image: &LinearRgbaImage) -> DynamicImage {
-  let mut rgba = RgbaImage::new(image.width as u32, image.height as u32);
+  let mut raw = vec![0u8; image.width * image.height * 4];
 
-  for (index, pixel) in rgba.pixels_mut().enumerate() {
-    let src = image.data[index];
-    let alpha = src[3].clamp(0.0, 1.0);
-    let inv_alpha = if alpha > EPSILON { 1.0 / alpha } else { 0.0 };
-    let rgb = [
-      linear_to_srgb(src[0] * inv_alpha),
-      linear_to_srgb(src[1] * inv_alpha),
-      linear_to_srgb(src[2] * inv_alpha),
-    ];
-    *pixel = Rgba([rgb[0], rgb[1], rgb[2], (alpha * 255.0).round() as u8]);
-  }
+  raw
+    .par_chunks_exact_mut(4)
+    .zip(image.data.par_iter())
+    .for_each(|(pixel, src)| {
+      let alpha = src[3].clamp(0.0, 1.0);
+      let inv_alpha = if alpha > EPSILON { 1.0 / alpha } else { 0.0 };
+      let [r, g, b, _] =
+        linear_rgb_to_srgb([src[0] * inv_alpha, src[1] * inv_alpha, src[2] * inv_alpha]);
+      pixel[0] = r;
+      pixel[1] = g;
+      pixel[2] = b;
+      pixel[3] = (alpha * 255.0).round() as u8;
+    });
 
-  DynamicImage::ImageRgba8(rgba)
+  DynamicImage::ImageRgba8(
+    RgbaImage::from_raw(image.width as u32, image.height as u32, raw)
+      .expect("rgba buffer size matches image dimensions"),
+  )
 }
 
 pub fn encode_dynamic_image(
@@ -78,20 +91,9 @@ fn rgba_to_rgb(rgba: RgbaImage) -> RgbImage {
 }
 
 fn srgb_to_linear(value: u8) -> f32 {
-  let srgb = value as f32 / 255.0;
-  if srgb <= 0.04045 {
-    srgb / 12.92
-  } else {
-    ((srgb + 0.055) / 1.055).powf(2.4)
-  }
+  srgb8_to_f32(value)
 }
 
-fn linear_to_srgb(value: f32) -> u8 {
-  let linear = value.clamp(0.0, 1.0);
-  let srgb = if linear <= 0.0031308 {
-    linear * 12.92
-  } else {
-    1.055 * linear.powf(1.0 / 2.4) - 0.055
-  };
-  (srgb.clamp(0.0, 1.0) * 255.0).round() as u8
+fn linear_rgb_to_srgb(rgb: [f32; 3]) -> [u8; 4] {
+  f32x4_to_srgb8([rgb[0], rgb[1], rgb[2], 0.0])
 }

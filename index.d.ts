@@ -14,16 +14,16 @@ export interface VariableBlurAdvancedOptions {
 
 export interface VariableBlurInput {
   buffer: Buffer
-  options?: VariableBlurOptions
+  options: VariableBlurOptions
 }
 
 export interface VariableBlurOptions {
-  x?: number
-  y?: number
+  x: number
+  y: number
   start?: number
   end?: number
   preset?: string
-  maxSigma?: number
+  maxSigma: number
   curve?: string
   schedule?: string
   advanced?: VariableBlurAdvancedOptions

@@ -4,13 +4,14 @@ name = "variable_blur"
 version = "0.1.0"
 
 [workspace]
-members = ["crates/debug-ui"]
+members = ["crates/benchmark", "crates/debug-ui"]
 resolver = "2"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+fast-srgb8 = "1.0.0"
 napi = "3.8.3"
 napi-derive = "3.5.2"
 image = { version = "0.25.10", default-features = false, features = [
