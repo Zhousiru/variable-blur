@@ -29,3 +29,13 @@ export interface VariableBlurOptions {
   advanced?: VariableBlurAdvancedOptions
   outputFormat?: string
 }
+
+export declare function variableBlurRaw(input: VariableBlurRawInput): Buffer
+
+export interface VariableBlurRawInput {
+  data: Buffer
+  width: number
+  height: number
+  channels: number
+  options: VariableBlurOptions
+}

@@ -41,6 +41,39 @@ await writeFile('photo-blurred.jpg', output)
 
 `variableBlur` 的输入和输出都是编码后的图片字节流。
 
+## 与 Sharp 集成
+
+```js
+import sharp from 'sharp'
+import { variableBlurRaw } from 'variable-blur'
+
+const pipeline = sharp('photo.jpg').resize(1400).ensureAlpha()
+const { data, info } = await pipeline.raw().toBuffer({ resolveWithObject: true })
+
+const blurred = variableBlurRaw({
+  data,
+  width: info.width,
+  height: info.height,
+  channels: info.channels,
+  options: {
+    x: 1,
+    y: 0,
+    maxSigma: 32,
+    preset: 'balanced',
+  },
+})
+
+const output = await sharp(blurred, {
+  raw: {
+    width: info.width,
+    height: info.height,
+    channels: info.channels,
+  },
+})
+  .jpeg()
+  .toBuffer()
+```
+
 ## Debug UI
 
 ```bash
@@ -57,6 +90,18 @@ cargo run -p variable_blur_debug_ui -r
 | :-------------- | :------- | :--------------------------------- |
 | `input.buffer`  | `Buffer` | 编码后的图片（PNG、JPEG、WebP 等） |
 | `input.options` | `object` | 必填配置对象，见下方               |
+
+### `variableBlurRaw(input): Buffer`
+
+适合直接接 `sharp.raw().toBuffer({ resolveWithObject: true })` 的输出。
+
+| 参数             | 类型                  | 说明                                       |
+| :--------------- | :-------------------- | :----------------------------------------- |
+| `input.data`     | `Buffer`              | 交错排列的原始像素字节流                   |
+| `input.width`    | `number`              | 图片宽度（像素）                           |
+| `input.height`   | `number`              | 图片高度（像素）                           |
+| `input.channels` | `3 \| 4`              | 原始通道数；当前支持 `RGB` 或 `RGBA`       |
+| `input.options`  | `VariableBlurOptions` | 必填配置对象，结构与 `variableBlur()` 相同 |
 
 ### Options
 

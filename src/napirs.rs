@@ -6,8 +6,9 @@ use napi::{
 use napi_derive::napi;
 
 use crate::core::{
-  apply_directional_variable_blur, default_directional_options, encode_dynamic_image, BlurCurve,
-  DirectionalBlurOptions, QualityPreset, SigmaSchedule, VariableBlurConfig,
+  apply_directional_variable_blur, apply_directional_variable_blur_raw,
+  default_directional_options, encode_dynamic_image, BlurCurve, DirectionalBlurOptions,
+  QualityPreset, SigmaSchedule, VariableBlurConfig,
 };
 
 const DEFAULT_CURVE_SPEC: &str = "power";
@@ -26,6 +27,16 @@ enum AdvancedMode {
 #[derive(Default)]
 pub struct VariableBlurInput {
   pub buffer: Buffer,
+  pub options: VariableBlurOptions,
+}
+
+#[napi(object)]
+#[derive(Default)]
+pub struct VariableBlurRawInput {
+  pub data: Buffer,
+  pub width: u32,
+  pub height: u32,
+  pub channels: u32,
   pub options: VariableBlurOptions,
 }
 
@@ -72,6 +83,26 @@ pub fn variable_blur(input: VariableBlurInput) -> Result<Buffer> {
   .map_err(|err| invalid_arg(format!("encode image failed: {err}")))?;
 
   Ok(encoded.into())
+}
+
+#[napi(js_name = "variableBlurRaw")]
+pub fn variable_blur_raw(input: VariableBlurRawInput) -> Result<Buffer> {
+  let options = input.options;
+  let dimensions = (input.width, input.height);
+  let cfg = build_config(&options, dimensions)?;
+  let blur_options = build_directional_options(&options, dimensions)?;
+
+  let output = apply_directional_variable_blur_raw(
+    &input.data,
+    input.width,
+    input.height,
+    input.channels,
+    cfg,
+    blur_options,
+  )
+  .map_err(|err| invalid_arg(format!("process raw image failed: {err}")))?;
+
+  Ok(output.into())
 }
 
 fn decode_input_image(buffer: &Buffer) -> Result<(DynamicImage, ImageFormat)> {

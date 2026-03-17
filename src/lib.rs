@@ -3,4 +3,4 @@
 pub mod core;
 mod napirs;
 
-pub use napirs::variable_blur;
+pub use napirs::{variable_blur, variable_blur_raw};

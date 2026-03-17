@@ -9,7 +9,9 @@ use crate::core::{
     sampling::sample_sigma,
     schedule::generate_sigmas,
   },
-  io::codec::{from_dynamic_image, to_dynamic_image},
+  io::codec::{
+    from_dynamic_image, from_raw_pixels, to_dynamic_image, to_raw_pixels, RawImageError,
+  },
   EPSILON,
 };
 
@@ -85,4 +87,18 @@ pub fn apply_directional_variable_blur(
   let prepared = PreparedVariableBlur::new(&src, cfg);
   let output = prepared.apply_with_direction(options.direction, options.start, options.end);
   to_dynamic_image(&output)
+}
+
+pub fn apply_directional_variable_blur_raw(
+  raw: &[u8],
+  width: u32,
+  height: u32,
+  channels: u32,
+  cfg: VariableBlurConfig,
+  options: DirectionalBlurOptions,
+) -> Result<Vec<u8>, RawImageError> {
+  let src = from_raw_pixels(raw, width as usize, height as usize, channels as usize)?;
+  let prepared = PreparedVariableBlur::new(&src, cfg);
+  let output = prepared.apply_with_direction(options.direction, options.start, options.end);
+  to_raw_pixels(&output, channels as usize)
 }

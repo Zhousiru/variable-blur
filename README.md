@@ -41,6 +41,39 @@ await writeFile('photo-blurred.jpg', output)
 
 `variableBlur` accepts encoded image bytes as input and returns encoded image bytes as output.
 
+## Using With Sharp
+
+```js
+import sharp from 'sharp'
+import { variableBlurRaw } from 'variable-blur'
+
+const pipeline = sharp('photo.jpg').resize(1400).ensureAlpha()
+const { data, info } = await pipeline.raw().toBuffer({ resolveWithObject: true })
+
+const blurred = variableBlurRaw({
+  data,
+  width: info.width,
+  height: info.height,
+  channels: info.channels,
+  options: {
+    x: 1,
+    y: 0,
+    maxSigma: 32,
+    preset: 'balanced',
+  },
+})
+
+const output = await sharp(blurred, {
+  raw: {
+    width: info.width,
+    height: info.height,
+    channels: info.channels,
+  },
+})
+  .jpeg()
+  .toBuffer()
+```
+
 ## Debug UI
 
 ```bash
@@ -57,6 +90,18 @@ Built-in [egui](https://github.com/emilk/egui) tool for real-time parameter tuni
 | :-------------- | :------- | :------------------------------------ |
 | `input.buffer`  | `Buffer` | Encoded image (PNG, JPEG, WebP, etc.) |
 | `input.options` | `object` | Required options object; see below    |
+
+### `variableBlurRaw(input): Buffer`
+
+Best for `sharp.raw().toBuffer({ resolveWithObject: true })` output.
+
+| Parameter        | Type                  | Description                                             |
+| :--------------- | :-------------------- | :------------------------------------------------------ |
+| `input.data`     | `Buffer`              | Interleaved raw pixel bytes                             |
+| `input.width`    | `number`              | Image width in pixels                                   |
+| `input.height`   | `number`              | Image height in pixels                                  |
+| `input.channels` | `3 \| 4`              | Raw channel count; current support is `RGB` or `RGBA`   |
+| `input.options`  | `VariableBlurOptions` | Required options object; same shape as `variableBlur()` |
 
 ### Options
 
