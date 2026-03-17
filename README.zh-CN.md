@@ -102,6 +102,18 @@ cargo run -p variable_blur_bench -r -- --image docs/benchmark.jpg --warmup 5 --r
 ```
 
 ```
+Machine       : macOS 26.2 | Apple M3 Pro | 12C / 12T
+Image         : 2400x1300 | Jpeg | Rgb8 | 593.59 KiB
+Benchmark     : 5 warmup | 20 measured
+Direction     : [1.0000, 0.0000] | start 0.0000 | end 2400.0000
+Sigma override: preset default
+
+Preset              avg     median        p95        min        max     MPix/s
+Fast           34.81 ms   33.90 ms   39.63 ms   32.71 ms   43.96 ms      89.62
+Balanced       41.43 ms   40.06 ms   49.44 ms   39.29 ms   52.31 ms      75.30
+High           62.48 ms   59.09 ms   88.07 ms   57.37 ms   88.39 ms      49.94
+
+
 Machine       : Windows 11 Pro | AMD Ryzen 9 9950X3D 16-Core Processor | 16C / 32T
 Image         : 2400x1300 | Jpeg | Rgb8 | 593.59 KiB
 Benchmark     : 5 warmup | 20 measured
