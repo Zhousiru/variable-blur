@@ -22,10 +22,9 @@ export interface VariableBlurOptions {
   y: number
   start?: number
   end?: number
-  preset?: string
+  quality?: number
   maxSigma: number
   curve?: string
-  schedule?: string
   advanced?: VariableBlurAdvancedOptions
   outputFormat?: string
 }

@@ -32,7 +32,7 @@ const output = variableBlur({
     x: 1,
     y: 0,
     maxSigma: 32,
-    preset: 'balanced',
+    quality: 0.5,
   },
 })
 
@@ -59,7 +59,7 @@ const blurred = variableBlurRaw({
     x: 1,
     y: 0,
     maxSigma: 32,
-    preset: 'balanced',
+    quality: 0.5,
   },
 })
 
@@ -105,18 +105,17 @@ Best for `sharp.raw().toBuffer({ resolveWithObject: true })` output.
 
 ### Options
 
-| Field          | Type     | Optional | Default        | Description                                                                           |
-| :------------- | :------- | :------: | :------------- | :------------------------------------------------------------------------------------ |
-| `x`            | `number` |    no    | -              | Finite X component of the blur direction vector                                       |
-| `y`            | `number` |    no    | -              | Finite Y component of the blur direction vector                                       |
-| `start`        | `number` |   yes    | auto           | Finite projection coordinate where blur begins                                        |
-| `end`          | `number` |   yes    | auto           | Finite projection coordinate where blur reaches max                                   |
-| `preset`       | `string` |   yes    | `"balanced"`   | `"fast"` / `"balanced"` / `"high"` quality preset for internal blur pyramid tuning    |
-| `maxSigma`     | `number` |    no    | -              | Maximum Gaussian sigma; controls the blur strength cap                                |
-| `curve`        | `string` |   yes    | `"power(1.6)"` | `"linear"`, `"power(γ)"`, `"cubic-bezier(x1,y1,x2,y2)"`; `γ` must be finite and `> 0` |
-| `schedule`     | `string` |   yes    | `"power(2.8)"` | `"linear"`, `"power(γ)"`; `γ` must be finite and `> 0`                                |
-| `outputFormat` | `string` |   yes    | same as input  | `"png"` / `"jpeg"` / `"jpg"` / `"webp"` / `"bmp"` / `"tiff"` / `"tga"`                |
-| `advanced`     | `object` |   yes    | &mdash;        | See [Advanced Options](#advanced-options)                                             |
+| Field          | Type     | Optional | Default        | Description                                                                                   |
+| :------------- | :------- | :------: | :------------- | :-------------------------------------------------------------------------------------------- |
+| `x`            | `number` |    no    | -              | Finite X component of the blur direction vector                                               |
+| `y`            | `number` |    no    | -              | Finite Y component of the blur direction vector                                               |
+| `start`        | `number` |   yes    | auto           | Finite projection coordinate where blur begins                                                |
+| `end`          | `number` |   yes    | auto           | Finite projection coordinate where blur reaches max                                           |
+| `quality`      | `number` |   yes    | `0.5`          | Quality factor in `[0, 1]`; higher values use more sigma anchors and shallower pyramid levels |
+| `maxSigma`     | `number` |    no    | -              | Maximum Gaussian sigma; controls the blur strength cap                                        |
+| `curve`        | `string` |   yes    | `"power(1.6)"` | `"linear"`, `"power(γ)"`, `"cubic-bezier(x1,y1,x2,y2)"`; `γ` must be finite and `> 0`         |
+| `outputFormat` | `string` |   yes    | same as input  | `"png"` / `"jpeg"` / `"jpg"` / `"webp"` / `"bmp"` / `"tiff"` / `"tga"`                        |
+| `advanced`     | `object` |   yes    | &mdash;        | See [Advanced Options](#advanced-options)                                                     |
 
 ### Advanced Options
 
@@ -125,7 +124,7 @@ Best for `sharp.raw().toBuffer({ resolveWithObject: true })` output.
 
 <br>
 
-`advanced.mode: "auto"` derives defaults from `preset`, image size, and `maxSigma`.
+`advanced.mode: "auto"` derives defaults from `quality`, `curve`, the active blur span, image size, and `maxSigma`.
 If you also provide other `advanced.*` fields, they still override those defaults.
 
 | Field                           | Type     | Default  | Description                                         |
@@ -147,28 +146,16 @@ cargo run -p variable_blur_bench -r -- --image docs/benchmark.jpg --warmup 5 --r
 ```
 
 ```
-Machine       : macOS 26.2 | Apple M3 Pro | 12C / 12T
-Image         : 2400x1300 | Jpeg | Rgb8 | 593.59 KiB
-Benchmark     : 5 warmup | 20 measured
-Direction     : [1.0000, 0.0000] | start 0.0000 | end 2400.0000
-Sigma override: preset default
-
-Preset              avg     median        p95        min        max     MPix/s
-Fast           34.81 ms   33.90 ms   39.63 ms   32.71 ms   43.96 ms      89.62
-Balanced       41.43 ms   40.06 ms   49.44 ms   39.29 ms   52.31 ms      75.30
-High           62.48 ms   59.09 ms   88.07 ms   57.37 ms   88.39 ms      49.94
-
-
 Machine       : Windows 11 Pro | AMD Ryzen 9 9950X3D 16-Core Processor | 16C / 32T
 Image         : 2400x1300 | Jpeg | Rgb8 | 593.59 KiB
 Benchmark     : 5 warmup | 20 measured
 Direction     : [1.0000, 0.0000] | start 0.0000 | end 2400.0000
-Sigma override: preset default
+Max sigma     : 32.00
 
-Preset              avg     median        p95        min        max     MPix/s
-Fast           82.16 ms   82.13 ms   83.57 ms   80.15 ms   83.92 ms      37.98
-Balanced      101.69 ms  101.68 ms  103.58 ms   97.86 ms  103.94 ms      30.68
-High          150.06 ms  150.02 ms  152.08 ms  147.99 ms  153.17 ms      20.79
+Quality             avg     median        p95        min        max     MPix/s
+q=0.00         65.08 ms   64.67 ms   67.08 ms   62.83 ms   67.87 ms      47.94
+q=0.50         91.11 ms   90.78 ms   92.58 ms   88.62 ms   93.24 ms      34.25
+q=1.00        541.93 ms  541.43 ms  546.71 ms  536.32 ms  549.56 ms       5.76
 ```
 
 ## License

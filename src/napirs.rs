@@ -6,15 +6,10 @@ use napi::{
 use napi_derive::napi;
 
 use crate::core::{
-  apply_directional_variable_blur, apply_directional_variable_blur_raw,
+  active_projection_span, apply_directional_variable_blur, apply_directional_variable_blur_raw,
   default_directional_options, encode_dynamic_image, BlurCurve, DirectionalBlurOptions,
-  QualityPreset, SigmaSchedule, VariableBlurConfig,
+  VariableBlurConfig, DEFAULT_CURVE_GAMMA, DEFAULT_CURVE_NAME,
 };
-
-const DEFAULT_CURVE_SPEC: &str = "power";
-const DEFAULT_CURVE_GAMMA: f32 = 1.6;
-const DEFAULT_SCHEDULE_SPEC: &str = "power";
-const DEFAULT_SCHEDULE_GAMMA: f32 = 2.8;
 
 #[derive(Clone, Copy, Default)]
 enum AdvancedMode {
@@ -59,10 +54,9 @@ pub struct VariableBlurOptions {
   pub y: f64,
   pub start: Option<f64>,
   pub end: Option<f64>,
-  pub preset: Option<String>,
+  pub quality: Option<f64>,
   pub max_sigma: f64,
   pub curve: Option<String>,
-  pub schedule: Option<String>,
   pub advanced: Option<VariableBlurAdvancedOptions>,
   pub output_format: Option<String>,
 }
@@ -71,8 +65,8 @@ pub struct VariableBlurOptions {
 pub fn variable_blur(input: VariableBlurInput) -> Result<Buffer> {
   let options = input.options;
   let (decoded, input_format) = decode_input_image(&input.buffer)?;
-  let cfg = build_config(&options, decoded.dimensions())?;
   let blur_options = build_directional_options(&options, decoded.dimensions())?;
+  let cfg = build_config(&options, decoded.dimensions(), blur_options)?;
 
   let output = apply_directional_variable_blur(&decoded, cfg, blur_options);
   let encoded = encode_dynamic_image(
@@ -89,8 +83,8 @@ pub fn variable_blur(input: VariableBlurInput) -> Result<Buffer> {
 pub fn variable_blur_raw(input: VariableBlurRawInput) -> Result<Buffer> {
   let options = input.options;
   let dimensions = (input.width, input.height);
-  let cfg = build_config(&options, dimensions)?;
   let blur_options = build_directional_options(&options, dimensions)?;
+  let cfg = build_config(&options, dimensions, blur_options)?;
 
   let output = apply_directional_variable_blur_raw(
     &input.data,
@@ -135,23 +129,30 @@ fn build_directional_options(
 fn build_config(
   options: &VariableBlurOptions,
   dimensions: (u32, u32),
+  blur_options: DirectionalBlurOptions,
 ) -> Result<VariableBlurConfig> {
-  let preset = parse_preset(options.preset.as_deref())?.unwrap_or(QualityPreset::Balanced);
+  let quality = parse_quality(options.quality)?.unwrap_or(0.5);
+  let curve = parse_curve(options.curve.as_deref())?;
   let max_sigma = positive("maxSigma", options.max_sigma)? as f32;
+  let blur_span = active_projection_span(
+    dimensions,
+    blur_options.direction,
+    blur_options.start,
+    blur_options.end,
+  );
 
   let advanced = options.advanced.as_ref();
   let mode = parse_advanced_mode(advanced.and_then(|value| value.mode.as_deref()))?;
   let mut cfg = match mode {
-    AdvancedMode::Auto => VariableBlurConfig::from_auto_preset(preset, dimensions, max_sigma),
-    AdvancedMode::Manual => {
-      let mut cfg = VariableBlurConfig::from_quality(preset);
-      cfg.max_sigma = max_sigma;
-      cfg
-    }
+    AdvancedMode::Auto => VariableBlurConfig::from_auto_quality(
+      quality,
+      curve.clone(),
+      dimensions,
+      max_sigma,
+      blur_span,
+    ),
+    AdvancedMode::Manual => VariableBlurConfig::from_quality(quality, curve, max_sigma, blur_span),
   };
-
-  cfg.curve = parse_curve(options.curve.as_deref())?;
-  cfg.schedule = parse_schedule(options.schedule.as_deref())?;
 
   if let Some(advanced) = advanced {
     apply_advanced_overrides(&mut cfg, advanced)?;
@@ -190,7 +191,7 @@ fn apply_advanced_overrides(
 }
 
 fn parse_curve(value: Option<&str>) -> Result<BlurCurve> {
-  let value = value.unwrap_or(DEFAULT_CURVE_SPEC).trim();
+  let value = value.unwrap_or(DEFAULT_CURVE_NAME).trim();
 
   if let Some((name, args)) = parse_function_call(value) {
     if name.eq_ignore_ascii_case("power") {
@@ -210,27 +211,6 @@ fn parse_curve(value: Option<&str>) -> Result<BlurCurve> {
   }
 }
 
-fn parse_schedule(value: Option<&str>) -> Result<SigmaSchedule> {
-  let value = value.unwrap_or(DEFAULT_SCHEDULE_SPEC).trim();
-
-  if let Some((name, args)) = parse_function_call(value) {
-    if name.eq_ignore_ascii_case("power") {
-      let [gamma] = parse_fixed_f32_args::<1>("schedule", value, args)?;
-      return Ok(SigmaSchedule::Power {
-        gamma: positive_f32("schedule", gamma, value)?,
-      });
-    }
-  }
-
-  match value {
-    value if value.eq_ignore_ascii_case("linear") => Ok(SigmaSchedule::Linear),
-    value if value.eq_ignore_ascii_case("power") => Ok(SigmaSchedule::Power {
-      gamma: DEFAULT_SCHEDULE_GAMMA,
-    }),
-    value => Err(invalid_arg(format!("unsupported schedule: {value}"))),
-  }
-}
-
 fn parse_advanced_mode(value: Option<&str>) -> Result<AdvancedMode> {
   match value {
     Some(name) if name.eq_ignore_ascii_case("manual") => Ok(AdvancedMode::Manual),
@@ -240,11 +220,12 @@ fn parse_advanced_mode(value: Option<&str>) -> Result<AdvancedMode> {
   }
 }
 
-fn parse_preset(value: Option<&str>) -> Result<Option<QualityPreset>> {
+fn parse_quality(value: Option<f64>) -> Result<Option<f32>> {
   match value {
-    Some(name) => QualityPreset::from_name(name)
-      .map(Some)
-      .ok_or_else(|| invalid_arg(format!("unsupported preset: {name}"))),
+    Some(quality) if quality.is_finite() && (0.0..=1.0).contains(&quality) => {
+      Ok(Some(quality as f32))
+    }
+    Some(_) => Err(invalid_arg("quality must be a finite number within [0, 1]")),
     None => Ok(None),
   }
 }

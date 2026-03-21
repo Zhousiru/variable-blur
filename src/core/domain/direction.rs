@@ -49,9 +49,31 @@ pub fn projection_bounds(dimensions: (u32, u32), direction: [f32; 2]) -> (f32, f
   (min_projection, max_projection)
 }
 
+pub fn active_projection_span(
+  dimensions: (u32, u32),
+  direction: [f32; 2],
+  start: f32,
+  end: f32,
+) -> f32 {
+  let direction = normalize_direction(direction);
+  let (image_start, image_end) = projection_bounds(dimensions, direction);
+  let (blur_start, blur_end) = sort_pair(start, end);
+  let overlap_start = blur_start.max(image_start);
+  let overlap_end = blur_end.min(image_end);
+  (overlap_end - overlap_start).max(0.0)
+}
+
+fn sort_pair(a: f32, b: f32) -> (f32, f32) {
+  if a <= b {
+    (a, b)
+  } else {
+    (b, a)
+  }
+}
+
 #[cfg(test)]
 mod tests {
-  use super::{default_directional_options, normalize_direction};
+  use super::{active_projection_span, default_directional_options, normalize_direction};
 
   #[test]
   fn zero_direction_falls_back_to_x_axis() {
@@ -63,5 +85,17 @@ mod tests {
     let options = default_directional_options((100, 50), [1.0, 0.0]);
     assert_eq!(options.start, 0.0);
     assert_eq!(options.end, 100.0);
+  }
+
+  #[test]
+  fn active_span_is_clipped_to_visible_projection() {
+    assert_eq!(
+      active_projection_span((100, 50), [1.0, 0.0], -20.0, 10.0),
+      10.0
+    );
+    assert_eq!(
+      active_projection_span((100, 50), [1.0, 0.0], 20.0, 40.0),
+      20.0
+    );
   }
 }

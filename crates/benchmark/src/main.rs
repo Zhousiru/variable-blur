@@ -10,14 +10,14 @@ use clap::Parser;
 use image::{DynamicImage, GenericImageView, ImageFormat, ImageReader};
 use sysinfo::System;
 use variable_blur::core::{
-  apply_directional_variable_blur, default_directional_options, DirectionalBlurOptions,
-  QualityPreset, VariableBlurConfig,
+  active_projection_span, apply_directional_variable_blur, default_directional_options, BlurCurve,
+  DirectionalBlurOptions, VariableBlurConfig,
 };
 
 #[derive(Debug, Parser)]
 #[command(
   name = "variable_blur_bench",
-  about = "Benchmark Variable Blur presets against a single input image."
+  about = "Benchmark Variable Blur quality levels against a single input image."
 )]
 struct Args {
   #[arg(long, short = 'i', value_name = "PATH")]
@@ -34,8 +34,8 @@ struct Args {
   start: Option<f32>,
   #[arg(long)]
   end: Option<f32>,
-  #[arg(long)]
-  max_sigma: Option<f32>,
+  #[arg(long, default_value_t = 32.0)]
+  max_sigma: f32,
 }
 
 #[derive(Debug)]
@@ -60,12 +60,12 @@ struct BenchmarkSettings {
   warmup: usize,
   runs: usize,
   options: DirectionalBlurOptions,
-  max_sigma_override: Option<f32>,
+  max_sigma: f32,
 }
 
 #[derive(Clone, Debug)]
 struct BenchmarkResult {
-  preset: QualityPreset,
+  label: &'static str,
   stats: Stats,
 }
 
@@ -86,14 +86,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   let (image, image_info) = load_image(&args.image)?;
   let settings = build_settings(&args, image.dimensions());
 
-  let results = [
-    QualityPreset::Fast,
-    QualityPreset::Balanced,
-    QualityPreset::High,
-  ]
-  .into_iter()
-  .map(|preset| benchmark_preset(&image, preset, &settings))
-  .collect::<Result<Vec<_>, _>>()?;
+  let results = [("0.00", 0.0), ("0.50", 0.5), ("1.00", 1.0)]
+    .into_iter()
+    .map(|(label, quality)| benchmark_quality(&image, label, quality, &settings))
+    .collect::<Result<Vec<_>, _>>()?;
 
   print_report(&environment, &image_info, &settings, &results);
   Ok(())
@@ -103,10 +99,8 @@ fn validate_args(args: &Args) -> Result<(), io::Error> {
   if args.runs == 0 {
     return Err(io::Error::other("--runs must be greater than 0"));
   }
-  if let Some(max_sigma) = args.max_sigma {
-    if !(max_sigma.is_finite() && max_sigma > 0.0) {
-      return Err(io::Error::other("--max-sigma must be a finite value > 0"));
-    }
+  if !(args.max_sigma.is_finite() && args.max_sigma > 0.0) {
+    return Err(io::Error::other("--max-sigma must be a finite value > 0"));
   }
 
   Ok(())
@@ -164,21 +158,27 @@ fn build_settings(args: &Args, dimensions: (u32, u32)) -> BenchmarkSettings {
     warmup: args.warmup,
     runs: args.runs,
     options,
-    max_sigma_override: args.max_sigma,
+    max_sigma: args.max_sigma,
   }
 }
 
-fn benchmark_preset(
+fn benchmark_quality(
   image: &DynamicImage,
-  preset: QualityPreset,
+  label: &'static str,
+  quality: f32,
   settings: &BenchmarkSettings,
 ) -> Result<BenchmarkResult, Box<dyn std::error::Error>> {
-  let config = VariableBlurConfig::from_auto_preset(
-    preset,
+  let config = VariableBlurConfig::from_auto_quality(
+    quality,
+    BlurCurve::Power(1.6),
     image.dimensions(),
-    settings
-      .max_sigma_override
-      .unwrap_or_else(|| preset.default_max_sigma()),
+    settings.max_sigma,
+    active_projection_span(
+      image.dimensions(),
+      settings.options.direction,
+      settings.options.start,
+      settings.options.end,
+    ),
   );
   config
     .validate()
@@ -198,7 +198,7 @@ fn benchmark_preset(
   }
 
   Ok(BenchmarkResult {
-    preset,
+    label,
     stats: Stats::from_samples(&samples),
   })
 }
@@ -281,24 +281,18 @@ fn print_report(
     settings.options.start,
     settings.options.end,
   );
-  println!(
-    "Sigma override: {}",
-    settings
-      .max_sigma_override
-      .map(|value| format!("{value:.2}"))
-      .unwrap_or_else(|| "preset default".to_owned()),
-  );
+  println!("Max sigma     : {:.2}", settings.max_sigma,);
   println!();
   println!(
     "{:<12} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
-    "Preset", "avg", "median", "p95", "min", "max", "MPix/s"
+    "Quality", "avg", "median", "p95", "min", "max", "MPix/s"
   );
 
   let megapixels = (image.width as f64 * image.height as f64) / 1_000_000.0;
   for result in results {
     println!(
       "{:<12} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10.2}",
-      preset_name(result.preset),
+      format!("q={}", result.label),
       format_ms(result.stats.mean_ms),
       format_ms(result.stats.median_ms),
       format_ms(result.stats.p95_ms),
@@ -306,14 +300,6 @@ fn print_report(
       format_ms(result.stats.max_ms),
       throughput_mpix_per_sec(megapixels, result.stats.mean_ms),
     );
-  }
-}
-
-fn preset_name(preset: QualityPreset) -> &'static str {
-  match preset {
-    QualityPreset::Fast => "Fast",
-    QualityPreset::Balanced => "Balanced",
-    QualityPreset::High => "High",
   }
 }
 

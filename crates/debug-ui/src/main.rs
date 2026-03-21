@@ -18,9 +18,10 @@ use eframe::{
 use image::{DynamicImage, GenericImageView};
 use rfd::FileDialog;
 use variable_blur::core::{
-  apply_directional_variable_blur, auto_advanced_settings, default_directional_options,
-  preset_advanced_settings, AdvancedSettings, BlurCurve, DirectionalBlurOptions, PyramidConfig,
-  QualityPreset, SigmaSchedule, VariableBlurConfig,
+  active_projection_span, apply_directional_variable_blur, auto_quality_settings,
+  default_directional_options, generate_curve_anchors, generate_directional_step_map,
+  quality_settings, AdvancedSettings, BlurCurve, DirectionalBlurOptions, PyramidConfig,
+  VariableBlurConfig,
 };
 
 fn main() -> eframe::Result<()> {
@@ -163,6 +164,7 @@ impl DebugApp {
       image: Arc::clone(source),
       config,
       options,
+      show_step_map: self.params.show_step_map,
     }) {
       Ok(()) => {
         self.pending_request_id = Some(request_id);
@@ -234,6 +236,9 @@ impl App for DebugApp {
         ui.separator();
 
         let mut changed = false;
+        changed |= ui
+          .checkbox(&mut self.params.show_step_map, "show stepMap")
+          .changed();
         let direction_changed = draw_direction_pad(ui, &mut self.params);
         changed |= direction_changed;
         if direction_changed && self.source_image.is_some() {
@@ -291,33 +296,27 @@ impl App for DebugApp {
             CurveMode::Linear => {}
           }
 
-          ui.add_space(6.0);
-          draw_curve_preview(ui, &self.params.to_curve());
-        });
-
-        ui.collapsing("Schedule", |ui| {
-          ComboBox::from_label("schedule")
-            .selected_text(self.params.schedule.label())
-            .show_ui(ui, |ui| {
-              changed |= ui
-                .selectable_value(&mut self.params.schedule, ScheduleMode::Linear, "Linear")
-                .changed();
-              changed |= ui
-                .selectable_value(&mut self.params.schedule, ScheduleMode::Power, "Power")
-                .changed();
-            });
-
-          match self.params.schedule {
-            ScheduleMode::Power => {
-              changed |= ui
-                .add(Slider::new(&mut self.params.schedule_gamma, 0.2..=4.0).text("schedule gamma"))
-                .changed();
-            }
-            ScheduleMode::Linear => {}
-          }
+          let preview_curve = self.params.to_curve();
+          let preview_steps = if self.params.auto_advanced {
+            let preview_span = self.params.effective_blur_span(
+              self
+                .source_image
+                .as_ref()
+                .map(|image| image.dimensions()),
+            );
+            quality_settings(
+              self.params.quality,
+              &preview_curve,
+              self.params.max_sigma,
+              preview_span,
+            )
+            .steps
+          } else {
+            self.params.steps
+          };
 
           ui.add_space(6.0);
-          draw_schedule_preview(ui, &self.params.to_schedule(), self.params.steps);
+          draw_curve_preview(ui, &preview_curve, preview_steps, self.params.max_sigma);
         });
 
         ui.collapsing("Advanced", |ui| {
@@ -325,12 +324,15 @@ impl App for DebugApp {
             .checkbox(&mut self.params.auto_advanced, "auto advanced")
             .changed();
           ui.label(
-            egui::RichText::new("derive advanced parameters from image size and max sigma").small(),
+            egui::RichText::new(
+              "derive advanced parameters from image size, active blur span, curve shape, and max sigma",
+            )
+            .small(),
           );
           ui.add_space(6.0);
 
-          let preset_changed = draw_advanced_presets(ui, &mut self.params.advanced_preset);
-          changed |= preset_changed;
+          let quality_changed = draw_quality_control(ui, &mut self.params.quality);
+          changed |= quality_changed;
 
           if self.params.auto_advanced {
             if let Some(image) = &self.source_image {
@@ -340,10 +342,14 @@ impl App for DebugApp {
               ui.label("Load an image to derive advanced values.");
             }
           } else {
-            if preset_changed {
-              self
-                .params
-                .apply_advanced_preset(self.params.advanced_preset);
+            if quality_changed {
+              self.params.apply_quality(
+                self.params.quality,
+                self
+                  .source_image
+                  .as_ref()
+                  .map(|image| image.dimensions()),
+              );
             }
             changed |= ui
               .add(Slider::new(&mut self.params.steps, 2..=24).text("steps"))
@@ -453,25 +459,11 @@ impl CurveMode {
   }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ScheduleMode {
-  Linear,
-  Power,
-}
-
-impl ScheduleMode {
-  fn label(self) -> &'static str {
-    match self {
-      Self::Linear => "Linear",
-      Self::Power => "Power",
-    }
-  }
-}
-
 #[derive(Clone)]
 struct UiParams {
-  advanced_preset: QualityPreset,
+  quality: f32,
   auto_advanced: bool,
+  show_step_map: bool,
   x: f32,
   y: f32,
   start: f32,
@@ -484,8 +476,6 @@ struct UiParams {
   curve_bezier_y1: f32,
   curve_bezier_x2: f32,
   curve_bezier_y2: f32,
-  schedule: ScheduleMode,
-  schedule_gamma: f32,
   max_levels: usize,
   target_local_sigma: f32,
   min_local_sigma: f32,
@@ -496,29 +486,28 @@ struct UiParams {
 impl Default for UiParams {
   fn default() -> Self {
     let mut params = Self {
-      advanced_preset: QualityPreset::Balanced,
+      quality: 0.5,
       auto_advanced: true,
+      show_step_map: false,
       x: 1.0,
       y: 0.0,
       start: 0.0,
       end: 512.0,
       max_sigma: 32.0,
-      steps: 10,
+      steps: 12,
       curve: CurveMode::Power,
       curve_gamma: 1.6,
       curve_bezier_x1: 0.42,
       curve_bezier_y1: 0.0,
       curve_bezier_x2: 0.58,
       curve_bezier_y2: 1.0,
-      schedule: ScheduleMode::Power,
-      schedule_gamma: 2.8,
-      max_levels: 4,
-      target_local_sigma: 2.0,
+      max_levels: 5,
+      target_local_sigma: 2.5,
       min_local_sigma: 0.5,
-      max_local_sigma: 4.0,
+      max_local_sigma: 6.25,
       downsample_stage_sigma: 0.5,
     };
-    params.apply_advanced_preset(QualityPreset::Balanced);
+    params.apply_quality(0.5, None);
     params
   }
 }
@@ -531,17 +520,7 @@ impl UiParams {
     VariableBlurConfig {
       max_sigma: self.max_sigma,
       steps: advanced.steps,
-      curve: match self.curve {
-        CurveMode::Linear => BlurCurve::Linear,
-        CurveMode::Power => BlurCurve::Power(self.curve_gamma.max(0.01)),
-        CurveMode::CubicBezier => BlurCurve::CubicBezier {
-          x1: self.curve_bezier_x1.clamp(0.0, 1.0),
-          y1: self.curve_bezier_y1.clamp(0.0, 1.0),
-          x2: self.curve_bezier_x2.clamp(0.0, 1.0),
-          y2: self.curve_bezier_y2.clamp(0.0, 1.0),
-        },
-      },
-      schedule: self.to_schedule(),
+      curve: self.to_curve(),
       pyramid: PyramidConfig {
         max_levels: advanced.max_levels.max(1),
         target_local_sigma: advanced.target_local_sigma.max(0.01),
@@ -552,9 +531,15 @@ impl UiParams {
     }
   }
 
-  fn apply_advanced_preset(&mut self, preset: QualityPreset) {
-    self.advanced_preset = preset;
-    let values = preset_advanced_settings(preset);
+  fn apply_quality(&mut self, q: f32, dimensions: Option<(u32, u32)>) {
+    self.quality = q.clamp(0.0, 1.0);
+    let curve = self.to_curve();
+    let values = quality_settings(
+      self.quality,
+      &curve,
+      self.max_sigma,
+      self.effective_blur_span(dimensions),
+    );
     self.steps = values.steps;
     self.max_levels = values.max_levels;
     self.target_local_sigma = values.target_local_sigma;
@@ -576,18 +561,26 @@ impl UiParams {
     }
   }
 
-  fn to_schedule(&self) -> SigmaSchedule {
-    match self.schedule {
-      ScheduleMode::Linear => SigmaSchedule::Linear,
-      ScheduleMode::Power => SigmaSchedule::Power {
-        gamma: self.schedule_gamma.max(0.01),
-      },
+  fn effective_blur_span(&self, dimensions: Option<(u32, u32)>) -> f32 {
+    match dimensions {
+      Some(dimensions) => {
+        active_projection_span(dimensions, [self.x, self.y], self.start, self.end)
+      }
+      None => (self.end - self.start).abs(),
     }
   }
 
   fn resolved_advanced(&self, dimensions: (u32, u32)) -> AdvancedSettings {
+    let curve = self.to_curve();
+    let blur_span = self.effective_blur_span(Some(dimensions));
     if self.auto_advanced {
-      auto_advanced_settings(self.advanced_preset, dimensions, self.max_sigma.max(0.01))
+      auto_quality_settings(
+        self.quality,
+        &curve,
+        dimensions,
+        self.max_sigma.max(0.01),
+        blur_span,
+      )
     } else {
       let min_local_sigma = self.min_local_sigma.max(0.01);
       let max_local_sigma = self.max_local_sigma.max(min_local_sigma);
@@ -806,26 +799,28 @@ fn direction_button(
   }
 }
 
-fn draw_advanced_presets(ui: &mut egui::Ui, preset: &mut QualityPreset) -> bool {
+fn draw_quality_control(ui: &mut egui::Ui, quality: &mut f32) -> bool {
   let mut changed = false;
-  ui.label("Advance Presets");
+
+  changed |= ui
+    .add(
+      Slider::new(quality, 0.0..=1.0)
+        .text("quality")
+        .fixed_decimals(2),
+    )
+    .changed();
+
   ui.horizontal(|ui| {
-    for option in [
-      QualityPreset::Fast,
-      QualityPreset::Balanced,
-      QualityPreset::High,
-    ] {
-      let selected = *preset == option;
-      if ui
-        .add(Button::new(option.label()).selected(selected))
-        .clicked()
-      {
-        *preset = option;
+    for (label, q) in [("0.00", 0.0), ("0.50", 0.5), ("1.00", 1.0)] {
+      let selected = (*quality - q).abs() < 0.01;
+      if ui.add(Button::new(label).selected(selected)).clicked() {
+        *quality = q;
         changed = true;
       }
     }
   });
   ui.add_space(6.0);
+
   changed
 }
 
@@ -842,7 +837,7 @@ fn show_texture(ui: &mut egui::Ui, texture: &TextureHandle) -> egui::Response {
   ui.add(egui::Image::new((texture.id(), image_size * scale)).sense(egui::Sense::click()))
 }
 
-fn draw_curve_preview(ui: &mut egui::Ui, curve: &BlurCurve) {
+fn draw_curve_preview(ui: &mut egui::Ui, curve: &BlurCurve, steps: usize, max_sigma: f32) {
   let desired_size = egui::vec2(ui.available_width().max(120.0), 120.0);
   let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
   let painter = ui.painter_at(rect);
@@ -855,40 +850,6 @@ fn draw_curve_preview(ui: &mut egui::Ui, curve: &BlurCurve) {
       .bg_fill
       .gamma_multiply(0.5),
   );
-
-  painter.rect_stroke(rect, 4.0, guide, egui::StrokeKind::Outside);
-  painter.line_segment([rect.left_bottom(), rect.left_top()], guide);
-  painter.line_segment([rect.left_bottom(), rect.right_bottom()], guide);
-  painter.line_segment([rect.left_bottom(), rect.right_top()], guide);
-
-  let steps = 64;
-  let mut points = Vec::with_capacity(steps + 1);
-  for index in 0..=steps {
-    let t = index as f32 / steps as f32;
-    let y = curve.eval(t);
-    points.push(egui::pos2(
-      egui::lerp(rect.left()..=rect.right(), t),
-      egui::lerp(rect.bottom()..=rect.top(), y),
-    ));
-  }
-
-  painter.add(egui::Shape::line(points, stroke));
-}
-
-fn draw_schedule_preview(ui: &mut egui::Ui, schedule: &SigmaSchedule, steps: usize) {
-  let desired_size = egui::vec2(ui.available_width().max(120.0), 120.0);
-  let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
-  let painter = ui.painter_at(rect);
-  let stroke = egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.fg_stroke.color);
-  let guide = egui::Stroke::new(
-    1.0,
-    ui.visuals()
-      .widgets
-      .noninteractive
-      .bg_fill
-      .gamma_multiply(0.5),
-  );
-  let dot_color = ui.visuals().selection.bg_fill;
 
   painter.rect_stroke(rect, 4.0, guide, egui::StrokeKind::Outside);
   painter.line_segment([rect.left_bottom(), rect.left_top()], guide);
@@ -899,28 +860,26 @@ fn draw_schedule_preview(ui: &mut egui::Ui, schedule: &SigmaSchedule, steps: usi
   let mut points = Vec::with_capacity(resolution + 1);
   for index in 0..=resolution {
     let t = index as f32 / resolution as f32;
-    let y = eval_schedule_preview(schedule, t).clamp(0.0, 1.0);
+    let y = curve.eval(t);
     points.push(egui::pos2(
       egui::lerp(rect.left()..=rect.right(), t),
       egui::lerp(rect.bottom()..=rect.top(), y),
     ));
   }
-  painter.add(egui::Shape::line(points, stroke));
 
-  let level_count = steps.max(2);
-  for index in 0..level_count {
-    let t = index as f32 / (level_count - 1) as f32;
-    let y = eval_schedule_preview(schedule, t).clamp(0.0, 1.0);
+  painter.add(egui::Shape::line(points, stroke));
+  let dot_color = ui.visuals().selection.bg_fill;
+
+  for anchor in generate_curve_anchors(curve, steps.max(2), max_sigma) {
     let center = egui::pos2(
-      egui::lerp(rect.left()..=rect.right(), t),
-      egui::lerp(rect.bottom()..=rect.top(), y),
+      egui::lerp(rect.left()..=rect.right(), anchor.t),
+      egui::lerp(
+        rect.bottom()..=rect.top(),
+        (anchor.sigma / max_sigma.max(0.01)).clamp(0.0, 1.0),
+      ),
     );
     painter.circle_filled(center, 2.5, dot_color);
   }
-}
-
-fn eval_schedule_preview(schedule: &SigmaSchedule, t: f32) -> f32 {
-  schedule.eval(t)
 }
 
 struct RenderRequest {
@@ -928,6 +887,7 @@ struct RenderRequest {
   image: Arc<DynamicImage>,
   config: VariableBlurConfig,
   options: DirectionalBlurOptions,
+  show_step_map: bool,
 }
 
 struct RenderResult {
@@ -947,7 +907,11 @@ fn spawn_render_worker(ctx: Context) -> (Sender<RenderRequest>, Receiver<RenderR
       }
 
       let started = Instant::now();
-      let image = apply_directional_variable_blur(&request.image, request.config, request.options);
+      let image = if request.show_step_map {
+        generate_directional_step_map(request.image.dimensions(), request.config, request.options)
+      } else {
+        apply_directional_variable_blur(&request.image, request.config, request.options)
+      };
       let duration_ms = started.elapsed().as_secs_f32() * 1000.0;
 
       if result_tx

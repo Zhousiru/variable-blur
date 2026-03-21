@@ -1,6 +1,12 @@
 use super::{image::LinearRgbaImage, pyramid::BlurLevel};
 use crate::core::EPSILON;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum SigmaSample {
+  Single(usize),
+  Blend { low: usize, high: usize, t: f32 },
+}
+
 pub(crate) fn sample_sigma(
   sigmas: &[f32],
   levels: &[BlurLevel],
@@ -8,13 +14,30 @@ pub(crate) fn sample_sigma(
   y: usize,
   sigma: f32,
 ) -> [f32; 4] {
-  if sigma <= sigmas[0] + EPSILON {
-    return sample_level_at_base(&levels[0], x, y);
+  match resolve_sigma_sample(sigmas, sigma) {
+    SigmaSample::Single(index) => sample_level_at_base(&levels[index], x, y),
+    SigmaSample::Blend { low, high, t } => {
+      let low = sample_level_at_base(&levels[low], x, y);
+      let high = sample_level_at_base(&levels[high], x, y);
+      let mut out = [0.0; 4];
+
+      for channel in 0..4 {
+        out[channel] = low[channel] + (high[channel] - low[channel]) * t;
+      }
+
+      out
+    }
+  }
+}
+
+pub(crate) fn resolve_sigma_sample(sigmas: &[f32], sigma: f32) -> SigmaSample {
+  if sigmas.len() <= 1 || sigma <= sigmas[0] + EPSILON {
+    return SigmaSample::Single(0);
   }
 
   let last_index = sigmas.len() - 1;
   if sigma >= sigmas[last_index] - EPSILON {
-    return sample_level_at_base(&levels[last_index], x, y);
+    return SigmaSample::Single(last_index);
   }
 
   let hi = sigmas.partition_point(|value| *value < sigma);
@@ -23,19 +46,15 @@ pub(crate) fn sample_sigma(
   let high_sigma = sigmas[hi];
 
   if (high_sigma - low_sigma).abs() < EPSILON {
-    return sample_level_at_base(&levels[lo], x, y);
+    SigmaSample::Single(lo)
+  } else {
+    let t = ((sigma - low_sigma) / (high_sigma - low_sigma)).clamp(0.0, 1.0);
+    SigmaSample::Blend {
+      low: lo,
+      high: hi,
+      t,
+    }
   }
-
-  let t = ((sigma - low_sigma) / (high_sigma - low_sigma)).clamp(0.0, 1.0);
-  let low = sample_level_at_base(&levels[lo], x, y);
-  let high = sample_level_at_base(&levels[hi], x, y);
-  let mut out = [0.0; 4];
-
-  for channel in 0..4 {
-    out[channel] = low[channel] + (high[channel] - low[channel]) * t;
-  }
-
-  out
 }
 
 fn sample_level_at_base(level: &BlurLevel, x: usize, y: usize) -> [f32; 4] {

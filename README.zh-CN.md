@@ -32,7 +32,7 @@ const output = variableBlur({
     x: 1,
     y: 0,
     maxSigma: 32,
-    preset: 'balanced',
+    quality: 0.5,
   },
 })
 
@@ -59,7 +59,7 @@ const blurred = variableBlurRaw({
     x: 1,
     y: 0,
     maxSigma: 32,
-    preset: 'balanced',
+    quality: 0.5,
   },
 })
 
@@ -111,10 +111,9 @@ cargo run -p variable_blur_debug_ui -r
 | `y`            | `number` |  否  | -              | 有限的模糊方向向量 Y 分量                                                       |
 | `start`        | `number` |  是  | 自动           | 有限的模糊起始投影坐标                                                          |
 | `end`          | `number` |  是  | 自动           | 有限的模糊达到最大值的投影坐标                                                  |
-| `preset`       | `string` |  是  | `"balanced"`   | `"fast"` / `"balanced"` / `"high"`，用于内部质量档位和高级参数                  |
+| `quality`      | `number` |  是  | `0.5`          | `[0, 1]` 范围内的质量系数；越高会使用更多 sigma anchor 和更浅的金字塔层级       |
 | `maxSigma`     | `number` |  否  | -              | 最大 sigma，控制模糊强度上限                                                    |
 | `curve`        | `string` |  是  | `"power(1.6)"` | `"linear"`、`"power(γ)"`、`"cubic-bezier(x1,y1,x2,y2)"`；`γ` 必须是有限且 `> 0` |
-| `schedule`     | `string` |  是  | `"power(2.8)"` | `"linear"`、`"power(γ)"`；`γ` 必须是有限且 `> 0`                                |
 | `outputFormat` | `string` |  是  | 与输入相同     | `"png"` / `"jpeg"` / `"jpg"` / `"webp"` / `"bmp"` / `"tiff"` / `"tga"`          |
 | `advanced`     | `object` |  是  | &mdash;        | 见 [Advanced Options](#advanced-options)                                        |
 
@@ -125,7 +124,7 @@ cargo run -p variable_blur_debug_ui -r
 
 <br>
 
-`advanced.mode: "auto"` 会根据 `preset`、图片尺寸和 `maxSigma` 推导默认值。
+`advanced.mode: "auto"` 会根据 `quality`、`curve`、有效模糊区间、图片尺寸和 `maxSigma` 推导默认值。
 如果同时传入其他 `advanced.*` 字段，它们仍会覆盖这些默认值。
 
 | 字段                            | 类型     | 默认值   | 说明                              |
@@ -147,28 +146,16 @@ cargo run -p variable_blur_bench -r -- --image docs/benchmark.jpg --warmup 5 --r
 ```
 
 ```
-Machine       : macOS 26.2 | Apple M3 Pro | 12C / 12T
-Image         : 2400x1300 | Jpeg | Rgb8 | 593.59 KiB
-Benchmark     : 5 warmup | 20 measured
-Direction     : [1.0000, 0.0000] | start 0.0000 | end 2400.0000
-Sigma override: preset default
-
-Preset              avg     median        p95        min        max     MPix/s
-Fast           34.81 ms   33.90 ms   39.63 ms   32.71 ms   43.96 ms      89.62
-Balanced       41.43 ms   40.06 ms   49.44 ms   39.29 ms   52.31 ms      75.30
-High           62.48 ms   59.09 ms   88.07 ms   57.37 ms   88.39 ms      49.94
-
-
 Machine       : Windows 11 Pro | AMD Ryzen 9 9950X3D 16-Core Processor | 16C / 32T
 Image         : 2400x1300 | Jpeg | Rgb8 | 593.59 KiB
 Benchmark     : 5 warmup | 20 measured
 Direction     : [1.0000, 0.0000] | start 0.0000 | end 2400.0000
-Sigma override: preset default
+Max sigma     : 32.00
 
-Preset              avg     median        p95        min        max     MPix/s
-Fast           82.16 ms   82.13 ms   83.57 ms   80.15 ms   83.92 ms      37.98
-Balanced      101.69 ms  101.68 ms  103.58 ms   97.86 ms  103.94 ms      30.68
-High          150.06 ms  150.02 ms  152.08 ms  147.99 ms  153.17 ms      20.79
+Quality             avg     median        p95        min        max     MPix/s
+q=0.00         65.08 ms   64.67 ms   67.08 ms   62.83 ms   67.87 ms      47.94
+q=0.50         91.11 ms   90.78 ms   92.58 ms   88.62 ms   93.24 ms      34.25
+q=1.00        541.93 ms  541.43 ms  546.71 ms  536.32 ms  549.56 ms       5.76
 ```
 
 ## License
